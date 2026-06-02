@@ -1,19 +1,10 @@
 // Configuration
 const API_URL = 'http://localhost:3001';
-const DISCORD_CLIENT_ID = 'YOUR_DISCORD_CLIENT_ID';
-const REDIRECT_URI = encodeURIComponent('http://localhost:3001/auth/discord/callback');
+const DISCORD_SERVER_INVITE = 'https://discord.gg/fnDYaTEzSt';
 
 // DOM Elements
 const navLinks = document.querySelectorAll('.nav-link');
 const tabContents = document.querySelectorAll('.tab-content');
-const loginBtn = document.getElementById('loginBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const userInfo = document.getElementById('userInfo');
-const username = document.getElementById('username');
-const userAvatar = document.getElementById('userAvatar');
-const loginModal = document.getElementById('loginModal');
-const discordLoginBtn = document.getElementById('discordLoginBtn');
-const closeBtn = document.querySelector('.close');
 const pollContent = document.getElementById('pollContent');
 const statsContent = document.getElementById('statsContent');
 const archiveContent = document.getElementById('archiveContent');
@@ -22,16 +13,77 @@ const startDate = document.getElementById('startDate');
 const endDate = document.getElementById('endDate');
 const filterBtn = document.getElementById('filterBtn');
 
-let currentUser = null;
-let currentToken = null;
+let referralCode = null;
+let userIP = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuthStatus();
+    checkReferralSource();
+    loadUserIP();
     setupEventListeners();
     loadPoll();
     setDateInputDefaults();
 });
+
+// Check if user came from Discord
+function checkReferralSource() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref');
+    const code = urlParams.get('code');
+
+    // Check referrer
+    const referrer = document.referrer;
+    const fromDiscord = referrer.includes('discord.com') || referrer.includes('discord.gg');
+
+    if (!fromDiscord && (!ref || ref !== 'discord')) {
+        showReferralWarning();
+        return false;
+    }
+
+    referralCode = code;
+    return true;
+}
+
+function showReferralWarning() {
+    const warning = document.createElement('div');
+    warning.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+    `;
+    warning.innerHTML = `
+        <div style="background-color: #2c2f33; padding: 2rem; border-radius: 8px; text-align: center; max-width: 500px; border: 2px solid #ed4245;">
+            <h2 style="color: #ed4245; margin-bottom: 1rem;">Access Denied</h2>
+            <p style="color: #b5bac1; margin-bottom: 1.5rem;">This link must be accessed from our Discord server.</p>
+            <a href="${DISCORD_SERVER_INVITE}" style="background-color: #5865f2; color: white; padding: 0.75rem 1.5rem; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: 600; transition: background-color 0.3s ease;" onmouseover="this.style.backgroundColor='#4752c4'" onmouseout="this.style.backgroundColor='#5865f2'">
+                Join Discord Server
+            </a>
+        </div>
+    `;
+    document.body.appendChild(warning);
+    document.body.style.overflow = 'hidden';
+}
+
+// Get user's public IP address
+async function loadUserIP() {
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        userIP = data.ip;
+        console.log('User IP:', userIP);
+    } catch (err) {
+        console.error('Error getting IP:', err);
+        // Fallback: use a hash of user agent if IP fetch fails
+        userIP = 'local_' + btoa(navigator.userAgent).substring(0, 10);
+    }
+}
 
 // Event Listeners
 function setupEventListeners() {
@@ -43,101 +95,7 @@ function setupEventListeners() {
         });
     });
 
-    loginBtn.addEventListener('click', showLoginModal);
-    logoutBtn.addEventListener('click', logout);
-    discordLoginBtn.addEventListener('click', loginWithDiscord);
-    closeBtn.addEventListener('click', closeLoginModal);
     filterBtn.addEventListener('click', loadStatistics);
-
-    // Close modal when clicking outside
-    window.addEventListener('click', (e) => {
-        if (e.target === loginModal) {
-            closeLoginModal();
-        }
-    });
-}
-
-// Authentication
-function checkAuthStatus() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-
-    if (token) {
-        currentToken = token;
-        localStorage.setItem('authToken', token);
-        verifyToken(token);
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-        const savedToken = localStorage.getItem('authToken');
-        if (savedToken) {
-            currentToken = savedToken;
-            verifyToken(savedToken);
-        }
-    }
-}
-
-function verifyToken(token) {
-    fetch(`${API_URL}/auth/verify`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token }),
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (data.valid) {
-                currentUser = data.user;
-                updateUserUI();
-            } else {
-                localStorage.removeItem('authToken');
-                currentToken = null;
-                currentUser = null;
-                updateUserUI();
-            }
-        })
-        .catch(err => {
-            console.error('Token verification failed:', err);
-            localStorage.removeItem('authToken');
-            currentToken = null;
-            currentUser = null;
-            updateUserUI();
-        });
-}
-
-function updateUserUI() {
-    if (currentUser) {
-        loginBtn.style.display = 'none';
-        userInfo.style.display = 'flex';
-        username.textContent = currentUser.username;
-        // Try to get user avatar, fallback to default
-        userAvatar.src = `https://ui-avatars.com/api/?name=${currentUser.username}&background=5865f2&color=fff`;
-    } else {
-        loginBtn.style.display = 'block';
-        userInfo.style.display = 'none';
-    }
-}
-
-function loginWithDiscord() {
-    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=identify`;
-    window.location.href = discordAuthUrl;
-}
-
-function logout() {
-    localStorage.removeItem('authToken');
-    currentToken = null;
-    currentUser = null;
-    updateUserUI();
-    loadPoll();
-    closeLoginModal();
-}
-
-function showLoginModal() {
-    loginModal.style.display = 'flex';
-}
-
-function closeLoginModal() {
-    loginModal.style.display = 'none';
 }
 
 // Tab Switching
@@ -172,9 +130,6 @@ function loadPoll() {
         .then(res => res.json())
         .then(data => {
             renderPoll(data);
-            if (currentUser) {
-                loadUserVote();
-            }
         })
         .catch(err => console.error('Error loading poll:', err));
 }
@@ -225,54 +180,49 @@ function renderPoll(poll) {
                 <div class="stat-value">${getPercentage(neutral)}%</div>
             </div>
         </div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #202225; text-align: center; color: #99aab5; font-size: 0.85rem;">
+            Total Votes: ${total}
+        </div>
     `;
 
     // Add event listeners to vote buttons
     document.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            if (!currentUser) {
-                showLoginModal();
-                return;
-            }
             castVote(btn.dataset.vote, poll.id);
         });
     });
 }
 
 function castVote(vote, pollId) {
+    if (!userIP) {
+        alert('Unable to verify your IP address. Please refresh and try again.');
+        return;
+    }
+
     fetch(`${API_URL}/polls/vote`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${currentToken}`,
+            'X-Forwarded-For': userIP,
         },
-        body: JSON.stringify({ vote }),
+        body: JSON.stringify({ 
+            vote,
+            ipAddress: userIP
+        }),
     })
         .then(res => res.json())
         .then(data => {
             if (data.success) {
                 loadPoll();
+                alert('Your vote has been recorded!');
+            } else if (data.error) {
+                alert('Error: ' + data.error);
             }
         })
-        .catch(err => console.error('Error casting vote:', err));
-}
-
-function loadUserVote() {
-    fetch(`${API_URL}/polls/my-vote`, {
-        headers: {
-            'Authorization': `Bearer ${currentToken}`,
-        },
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (data.vote) {
-                const voteBtn = document.querySelector(`[data-vote="${data.vote}"]`);
-                if (voteBtn) {
-                    voteBtn.classList.add('selected');
-                }
-            }
-        })
-        .catch(err => console.error('Error loading user vote:', err));
+        .catch(err => {
+            console.error('Error casting vote:', err);
+            alert('Failed to cast vote');
+        });
 }
 
 // Statistics Functions
