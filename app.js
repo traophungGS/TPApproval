@@ -2,8 +2,8 @@
 const API_URL = 'http://localhost:3001';
 const DISCORD_SERVER_INVITE = 'https://discord.gg/fnDYaTEzSt';
 
-// Approved Discord message for voting link
-const APPROVED_MESSAGE_LINK = 'https://discord.com/channels/1156605736844009522/1408541947475267664/1511273724312031304';
+// Security token for the voting link (shared secret)
+const VALID_TOKEN = 'trao_phung_voting_2026_secure';
 
 // DOM Elements
 const navLinks = document.querySelectorAll('.nav-link');
@@ -31,35 +31,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Verify user accessed from the approved Discord message
+// Verify access using token from URL
 function checkReferralSource() {
     const urlParams = new URLSearchParams(window.location.search);
-    const messageToken = urlParams.get('msg');
+    const token = urlParams.get('token');
     
-    // Check if they have the correct message token
-    if (messageToken && messageToken === generateMessageToken()) {
+    console.log('Token received:', token);
+    console.log('Expected token:', VALID_TOKEN);
+    
+    // Check if they have the correct security token
+    if (token && token === VALID_TOKEN) {
         isValidReferral = true;
-        console.log('✅ Valid message token detected');
+        console.log('✅ Valid security token detected - Access granted!');
+        // Store token in session to prevent token reuse attacks
+        sessionStorage.setItem('votingToken', token);
+        sessionStorage.setItem('accessTime', new Date().getTime());
         return true;
     }
 
-    // Check referrer contains the exact message URL
-    const referrer = document.referrer;
-    if (referrer && referrer.includes('discord.com/channels/1156605736844009522/1408541947475267664/1511273724312031304')) {
-        isValidReferral = true;
-        console.log('✅ Accessed from approved Discord message');
-        return true;
+    // Check if already has valid session token
+    const sessionToken = sessionStorage.getItem('votingToken');
+    if (sessionToken && sessionToken === VALID_TOKEN) {
+        const accessTime = parseInt(sessionStorage.getItem('accessTime'));
+        // Token valid for 24 hours
+        if (new Date().getTime() - accessTime < 24 * 60 * 60 * 1000) {
+            isValidReferral = true;
+            console.log('✅ Valid session token detected - Access granted!');
+            return true;
+        }
     }
 
     // Access denied - show instructions
     showAccessDeniedScreen();
     return false;
-}
-
-// Generate a token for message validation
-function generateMessageToken() {
-    // Simple hash of the message link
-    return btoa('1156605736844009522_1408541947475267664_1511273724312031304').substring(0, 20);
 }
 
 function showAccessDeniedScreen() {
@@ -78,7 +82,7 @@ function showAccessDeniedScreen() {
                         <li style="margin-bottom: 0.5rem;">Go to your Discord server</li>
                         <li style="margin-bottom: 0.5rem;">Find the voting announcement message</li>
                         <li style="margin-bottom: 0.5rem;">Click the voting link in that message</li>
-                        <li>You'll have access to vote</li>
+                        <li>You'll have full access to vote</li>
                     </ol>
                 </div>
 
