@@ -2,6 +2,9 @@
 const API_URL = 'http://localhost:3001';
 const DISCORD_SERVER_INVITE = 'https://discord.gg/fnDYaTEzSt';
 
+// Approved Discord message for voting link
+const APPROVED_MESSAGE_LINK = 'https://discord.com/channels/1156605736844009522/1408541947475267664/1511273724312031304';
+
 // DOM Elements
 const navLinks = document.querySelectorAll('.nav-link');
 const tabContents = document.querySelectorAll('.tab-content');
@@ -15,60 +18,82 @@ const filterBtn = document.getElementById('filterBtn');
 
 let referralCode = null;
 let userIP = null;
+let isValidReferral = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     checkReferralSource();
-    loadUserIP();
-    setupEventListeners();
-    loadPoll();
-    setDateInputDefaults();
+    if (isValidReferral) {
+        loadUserIP();
+        setupEventListeners();
+        loadPoll();
+        setDateInputDefaults();
+    }
 });
 
-// Check if user came from Discord
+// Verify user accessed from the approved Discord message
 function checkReferralSource() {
     const urlParams = new URLSearchParams(window.location.search);
-    const ref = urlParams.get('ref');
-    const code = urlParams.get('code');
-
-    // Check referrer
-    const referrer = document.referrer;
-    const fromDiscord = referrer.includes('discord.com') || referrer.includes('discord.gg');
-
-    if (!fromDiscord && (!ref || ref !== 'discord')) {
-        showReferralWarning();
-        return false;
+    const messageToken = urlParams.get('msg');
+    
+    // Check if they have the correct message token
+    if (messageToken && messageToken === generateMessageToken()) {
+        isValidReferral = true;
+        console.log('✅ Valid message token detected');
+        return true;
     }
 
-    referralCode = code;
-    return true;
+    // Check referrer contains the exact message URL
+    const referrer = document.referrer;
+    if (referrer && referrer.includes('discord.com/channels/1156605736844009522/1408541947475267664/1511273724312031304')) {
+        isValidReferral = true;
+        console.log('✅ Accessed from approved Discord message');
+        return true;
+    }
+
+    // Access denied - show instructions
+    showAccessDeniedScreen();
+    return false;
 }
 
-function showReferralWarning() {
-    const warning = document.createElement('div');
-    warning.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.9);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 2000;
-    `;
-    warning.innerHTML = `
-        <div style="background-color: #2c2f33; padding: 2rem; border-radius: 8px; text-align: center; max-width: 500px; border: 2px solid #ed4245;">
-            <h2 style="color: #ed4245; margin-bottom: 1rem;">Access Denied</h2>
-            <p style="color: #b5bac1; margin-bottom: 1.5rem;">This link must be accessed from our Discord server.</p>
-            <a href="${DISCORD_SERVER_INVITE}" style="background-color: #5865f2; color: white; padding: 0.75rem 1.5rem; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: 600; transition: background-color 0.3s ease;" onmouseover="this.style.backgroundColor='#4752c4'" onmouseout="this.style.backgroundColor='#5865f2'">
-                Join Discord Server
-            </a>
+// Generate a token for message validation
+function generateMessageToken() {
+    // Simple hash of the message link
+    return btoa('1156605736844009522_1408541947475267664_1511273724312031304').substring(0, 20);
+}
+
+function showAccessDeniedScreen() {
+    document.body.innerHTML = `
+        <div style="background-color: #36393f; color: #dcddde; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center;">
+            <div style="max-width: 600px; background-color: #2c2f33; padding: 3rem; border-radius: 12px; border: 2px solid #ed4245; text-align: center;">
+                <h1 style="color: #ed4245; margin-bottom: 1rem; font-size: 2rem;">❌ Invalid Access</h1>
+                
+                <p style="color: #b5bac1; font-size: 1.1rem; margin-bottom: 1.5rem; line-height: 1.6;">
+                    This voting website can <strong>only be accessed through the official voting link posted in our Discord server</strong>.
+                </p>
+
+                <div style="background-color: #1e2124; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; text-align: left;">
+                    <p style="color: #99aab5; margin-bottom: 0.5rem;">📝 <strong>How to access:</strong></p>
+                    <ol style="color: #b5bac1; margin-left: 1.5rem; margin-top: 0.5rem;">
+                        <li style="margin-bottom: 0.5rem;">Go to your Discord server</li>
+                        <li style="margin-bottom: 0.5rem;">Find the voting announcement message</li>
+                        <li style="margin-bottom: 0.5rem;">Click the voting link in that message</li>
+                        <li>You'll have access to vote</li>
+                    </ol>
+                </div>
+
+                <a href="${DISCORD_SERVER_INVITE}" style="background-color: #5865f2; color: white; padding: 1rem 2rem; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 600; font-size: 1rem; transition: background-color 0.3s ease; cursor: pointer;" onmouseover="this.style.backgroundColor='#4752c4'" onmouseout="this.style.backgroundColor='#5865f2'">
+                    Go to Discord Server
+                </a>
+
+                <p style="color: #72767d; font-size: 0.9rem; margin-top: 2rem;">
+                    This security measure ensures only authorized members can vote.
+                </p>
+            </div>
         </div>
     `;
-    document.body.appendChild(warning);
-    document.body.style.overflow = 'hidden';
+    document.body.style.margin = '0';
+    document.body.style.padding = '0';
 }
 
 // Get user's public IP address
@@ -77,11 +102,12 @@ async function loadUserIP() {
         const response = await fetch('https://api.ipify.org?format=json');
         const data = await response.json();
         userIP = data.ip;
-        console.log('User IP:', userIP);
+        console.log('✅ User IP detected:', userIP);
     } catch (err) {
         console.error('Error getting IP:', err);
         // Fallback: use a hash of user agent if IP fetch fails
         userIP = 'local_' + btoa(navigator.userAgent).substring(0, 10);
+        console.log('⚠️ Using fallback IP:', userIP);
     }
 }
 
@@ -214,9 +240,9 @@ function castVote(vote, pollId) {
         .then(data => {
             if (data.success) {
                 loadPoll();
-                alert('Your vote has been recorded!');
+                alert('✅ Your vote has been recorded!');
             } else if (data.error) {
-                alert('Error: ' + data.error);
+                alert('❌ Error: ' + data.error);
             }
         })
         .catch(err => {
@@ -341,7 +367,7 @@ function renderArchive(polls) {
 
 // Auto-refresh poll every 30 seconds
 setInterval(() => {
-    if (document.querySelector('.tab-content.active').id === 'pollsTab') {
+    if (document.querySelector('.tab-content.active')?.id === 'pollsTab') {
         loadPoll();
     }
 }, 30000);
