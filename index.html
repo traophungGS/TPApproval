@@ -5,82 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trao Phung Approval Rating</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 </head>
 <body>
     <nav class="navbar">
         <div class="container">
             <div class="navbar-brand">
-                <h1>Trao Phung Approval Rating</h1>
+                <h1>Approval Rating Polls</h1>
             </div>
             <div class="navbar-menu">
-                <a href="#" class="nav-link active" data-tab="polls">Daily Poll</a>
+                <a href="#" class="nav-link active" data-tab="polls">Polls</a>
                 <a href="#" class="nav-link" data-tab="stats">Statistics</a>
-                <a href="#" class="nav-link" data-tab="archive">Archive</a>
-                <div id="userInfo" class="user-info" style="display: none;">
-                    <img id="userAvatar" src="" alt="User Avatar" class="user-avatar">
-                    <span id="username"></span>
-                    <button id="logoutBtn" class="logout-btn">Logout</button>
-                </div>
-                <button id="loginBtn" class="login-btn" style="display: none;">
-                    Login with Discord
-                </button>
+                <a href="https://discord.gg/fnDYaTEzSt" target="_blank" class="nav-link" style="color: #5865f2; font-weight: 600;">
+                    Join Discord 🔗
+                </a>
             </div>
         </div>
     </nav>
 
     <main class="container">
-        <!-- Daily Poll Tab -->
+        <!-- Polls Tab -->
         <section id="pollsTab" class="tab-content active">
             <div class="section-header">
-                <h2>Today's Approval Rating</h2>
-                <p id="pollDate" class="poll-date"></p>
+                <h2>Today's Polls</h2>
+                <p class="poll-date" id="pollDate"></p>
             </div>
 
-            <div id="pollContent" class="poll-container">
-                <p style="text-align: center; color: #666;">Loading poll...</p>
+            <div id="pollsContainer" class="polls-grid">
+                <p style="text-align: center; color: #666;">Loading polls...</p>
             </div>
         </section>
 
         <!-- Statistics Tab -->
         <section id="statsTab" class="tab-content">
             <div class="section-header">
-                <h2>Statistics</h2>
+                <h2>Historical Statistics</h2>
                 <div class="stats-controls">
+                    <select id="pollSelect" class="date-input">
+                        <option value="">Select a poll...</option>
+                    </select>
                     <input type="date" id="startDate" class="date-input">
                     <span>to</span>
                     <input type="date" id="endDate" class="date-input">
-                    <button id="filterBtn" class="btn btn-primary">Filter</button>
+                    <button id="filterBtn" class="btn btn-primary">View Chart</button>
                 </div>
             </div>
 
-            <div id="statsContent" class="stats-container">
-                <p style="text-align: center; color: #666;">Loading statistics...</p>
-            </div>
-        </section>
-
-        <!-- Archive Tab -->
-        <section id="archiveTab" class="tab-content">
-            <div class="section-header">
-                <h2>Archived Polls</h2>
-            </div>
-
-            <div id="archiveContent" class="archive-container">
-                <p style="text-align: center; color: #666;">Loading archived polls...</p>
+            <div id="statsContent">
+                <div style="text-align: center; color: #99aab5; padding: 2rem;">
+                    Select a poll and date range to view historical data
+                </div>
             </div>
         </section>
     </main>
 
-    <!-- Login Modal -->
-    <div id="loginModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Login Required</h2>
-            <p>You must login with Discord to vote.</p>
-            <button id="discordLoginBtn" class="btn btn-primary btn-large">
-                Login with Discord
-            </button>
-        </div>
-    </div>
+    <canvas id="statsChart" style="display: none;"></canvas>
 
     <script src="app.js"></script>
 </body>
