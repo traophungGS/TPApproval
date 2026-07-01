@@ -51,8 +51,8 @@ const statsChart = document.getElementById('statsChart');
 let referralCode = null;
 let userIP = null;
 let isValidReferral = false;
-let userVotes = {}; // Track user votes for the day
-let pollHistory = {}; // Store historical data by date
+let userVotedPolls = {}; // Track which polls user has voted on today
+let pollHistory = {}; // Store historical data by date and option
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -60,9 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isValidReferral) {
         loadUserIP();
         setupEventListeners();
+        initializeHistoricalData();
         loadPolls();
         setDateInputDefaults();
-        initializeHistoricalData();
     }
 });
 
@@ -142,12 +142,37 @@ async function loadUserIP() {
         const data = await response.json();
         userIP = data.ip;
         console.log('✅ User IP detected:', userIP);
+        
+        // Load which polls this IP has voted on today
+        loadUserVoteStatus();
     } catch (err) {
         console.error('Error getting IP:', err);
         // Fallback: use a hash of user agent if IP fetch fails
         userIP = 'local_' + btoa(navigator.userAgent).substring(0, 10);
         console.log('⚠️ Using fallback IP:', userIP);
+        loadUserVoteStatus();
     }
+}
+
+// Load which polls the user has already voted on
+function loadUserVoteStatus() {
+    const today = new Date().toISOString().split('T')[0];
+    const storedStatus = localStorage.getItem(`votedPolls_${userIP}_${today}`);
+    
+    if (storedStatus) {
+        userVotedPolls = JSON.parse(storedStatus);
+    } else {
+        userVotedPolls = {};
+        POLLS_CONFIG.forEach(poll => {
+            userVotedPolls[poll.id] = false;
+        });
+    }
+}
+
+// Save user vote status
+function saveUserVoteStatus() {
+    const today = new Date().toISOString().split('T')[0];
+    localStorage.setItem(`votedPolls_${userIP}_${today}`, JSON.stringify(userVotedPolls));
 }
 
 // Event Listeners
@@ -189,7 +214,6 @@ function switchTab(tabName) {
 
 // Initialize historical data in localStorage
 function initializeHistoricalData() {
-    const today = new Date().toISOString().split('T')[0];
     const storedData = localStorage.getItem('pollHistory');
     
     if (!storedData) {
@@ -201,27 +225,13 @@ function initializeHistoricalData() {
     } else {
         pollHistory = JSON.parse(storedData);
     }
-
-    // Reset votes for today or initialize
-    const todayData = localStorage.getItem('todayDate');
-    if (todayData !== today) {
-        // New day - reset all daily votes
-        localStorage.setItem('todayDate', today);
-        userVotes = {};
-        POLLS_CONFIG.forEach(poll => {
-            userVotes[poll.id] = {
-                Excellent: 0,
-                Approve: 0,
-                'Not sure': 0,
-                Disapprove: 0,
-                Disappointed: 0
-            };
-        });
-    } else {
-        // Load today's votes from storage
-        const storedVotes = localStorage.getItem('todayVotes');
-        userVotes = storedVotes ? JSON.parse(storedVotes) : {};
-    }
+    
+    // Ensure all polls exist in history
+    POLLS_CONFIG.forEach(poll => {
+        if (!pollHistory[poll.id]) {
+            pollHistory[poll.id] = {};
+        }
+    });
 }
 
 // Poll Functions - Load all three polls
@@ -246,28 +256,23 @@ function createPollCard(pollConfig) {
     const card = document.createElement('div');
     card.className = 'poll-card';
     
-    // Initialize votes if not exists
-    if (!userVotes[pollConfig.id]) {
-        userVotes[pollConfig.id] = {
-            Excellent: 0,
-            Approve: 0,
-            'Not sure': 0,
-            Disapprove: 0,
-            Disappointed: 0
-        };
-    }
-
-    const votes = userVotes[pollConfig.id];
-    const total = Object.values(votes).reduce((a, b) => a + b, 0);
-
+    // Get today's vote counts for this poll
+    const today = new Date().toISOString().split('T')[0];
+    const todayVotes = pollHistory[pollConfig.id][today] || {};
+    
+    // Count total votes
+    const total = Object.values(todayVotes).reduce((a, b) => a + b, 0);
     const getPercentage = (count) => (total > 0 ? ((count / total) * 100).toFixed(1) : 0);
+
+    // Check if user has voted on this poll
+    const hasVoted = userVotedPolls[pollConfig.id];
 
     let optionsHTML = '<div class="vote-options">';
     pollConfig.options.forEach(option => {
         const emoji = OPTION_EMOJIS[option] || '•';
-        const count = votes[option] || 0;
+        const count = todayVotes[option] || 0;
         optionsHTML += `
-            <button class="vote-btn" data-vote="${option}" data-poll="${pollConfig.id}">
+            <button class="vote-btn ${hasVoted ? 'disabled' : ''}" data-vote="${option}" data-poll="${pollConfig.id}" ${hasVoted ? 'disabled' : ''}>
                 <span>${emoji} ${option}</span>
                 <span class="vote-count">${count}</span>
             </button>
@@ -277,7 +282,7 @@ function createPollCard(pollConfig) {
 
     let statsHTML = '<div class="poll-stats">';
     pollConfig.options.forEach(option => {
-        const percentage = getPercentage(votes[option] || 0);
+        const percentage = getPercentage(todayVotes[option] || 0);
         statsHTML += `
             <div class="stat-item">
                 <div class="stat-label">${option}</div>
@@ -287,6 +292,8 @@ function createPollCard(pollConfig) {
     });
     statsHTML += '</div>';
 
+    const voteStatusHTML = hasVoted ? '<div style="margin-top: 1rem; padding: 0.75rem; background-color: #57f287; color: #000; border-radius: 6px; text-align: center; font-weight: 600;">✅ You voted today</div>' : '';
+
     card.innerHTML = `
         <div class="card-title">${pollConfig.title}</div>
         <div class="poll-question">${pollConfig.question}</div>
@@ -295,10 +302,11 @@ function createPollCard(pollConfig) {
         <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #202225; text-align: center; color: #99aab5; font-size: 0.85rem;">
             Total Votes: ${total}
         </div>
+        ${voteStatusHTML}
     `;
 
     // Add event listeners to vote buttons
-    card.querySelectorAll('.vote-btn').forEach(btn => {
+    card.querySelectorAll('.vote-btn:not(.disabled)').forEach(btn => {
         btn.addEventListener('click', () => {
             castVote(btn.dataset.vote, btn.dataset.poll, pollConfig);
         });
@@ -313,19 +321,42 @@ function castVote(option, pollId, pollConfig) {
         return;
     }
 
-    // Check if this is first vote today to increment streak
-    const hasVotedToday = Object.keys(userVotes).some(pid => {
-        return Object.values(userVotes[pid]).reduce((a, b) => a + b, 0) > 0;
+    // Check if user has already voted on this poll today
+    if (userVotedPolls[pollId]) {
+        alert('❌ You have already voted on this poll today. Try again tomorrow!');
+        return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Initialize today's data if not exists
+    if (!pollHistory[pollId][today]) {
+        pollHistory[pollId][today] = {};
+    }
+
+    // Initialize all options if not exists
+    pollConfig.options.forEach(opt => {
+        if (!pollHistory[pollId][today][opt]) {
+            pollHistory[pollId][today][opt] = 0;
+        }
     });
 
-    // Update local vote count
-    userVotes[pollId][option]++;
-    
-    // Save to localStorage
-    localStorage.setItem('todayVotes', JSON.stringify(userVotes));
+    // Increment the vote count for this option
+    pollHistory[pollId][today][option]++;
+
+    // Save history
+    localStorage.setItem('pollHistory', JSON.stringify(pollHistory));
+
+    // Mark that this user has voted on this poll
+    userVotedPolls[pollId] = true;
+    saveUserVoteStatus();
+
+    // Check if this is the first vote of the day across all polls
+    const hasVotedAnyPoll = Object.values(userVotedPolls).some(voted => voted === true);
+    const justVotedFirstTime = Object.values(userVotedPolls).filter(voted => voted === true).length === 1;
 
     // Increment streak on first vote of the day
-    if (!hasVotedToday && streakSystem) {
+    if (justVotedFirstTime && streakSystem) {
         const incremented = streakSystem.incrementStreak();
         if (incremented) {
             streakSystem.updateStreakDisplay();
@@ -333,21 +364,10 @@ function castVote(option, pollId, pollConfig) {
         }
     }
 
-    // Archive today's votes in history
-    const today = new Date().toISOString().split('T')[0];
-    if (!pollHistory[pollId]) {
-        pollHistory[pollId] = {};
-    }
-    if (!pollHistory[pollId][today]) {
-        pollHistory[pollId][today] = {};
-    }
-    pollHistory[pollId][today] = { ...userVotes[pollId] };
-    localStorage.setItem('pollHistory', JSON.stringify(pollHistory));
-
     // Update poll display
     loadPolls();
-
-    console.log('✅ Your vote for ' + option + ' has been recorded!');
+    
+    console.log(`✅ Your vote for "${option}" on "${pollConfig.title}" has been recorded!`);
 }
 
 // Statistics Functions
@@ -383,12 +403,22 @@ function loadStatistics() {
     const pollData = pollHistory[selectedPoll] || {};
     const chartData = generateChartData(selectedPoll, pollData, start, end);
     
+    if (chartData.datasets[0].data.length === 0) {
+        statsContent.innerHTML = '<div style="text-align: center; color: #99aab5; padding: 2rem;">No data available for selected date range</div>';
+        if (statsChart.chart) {
+            statsChart.chart.destroy();
+        }
+        statsChart.style.display = 'none';
+        return;
+    }
+    
     renderChart(chartData);
     renderStatisticsTable(chartData);
 }
 
 function generateChartData(pollId, pollData, startDateStr, endDateStr) {
-    const options = POLLS_CONFIG.find(p => p.id === pollId)?.options || [];
+    const pollConfig = POLLS_CONFIG.find(p => p.id === pollId);
+    const options = pollConfig?.options || [];
     const startDate = new Date(startDateStr);
     const endDate = new Date(endDateStr);
     
@@ -399,7 +429,8 @@ function generateChartData(pollId, pollData, startDateStr, endDateStr) {
         emoji: OPTION_EMOJIS[option],
         borderColor: getColorForOption(option),
         backgroundColor: getColorForOption(option, true),
-        tension: 0.1
+        tension: 0.1,
+        fill: false
     }));
 
     // Generate data for each day in range
@@ -439,7 +470,6 @@ function renderChart(chartData) {
     }
 
     statsChart.style.display = 'block';
-    statsContent.innerHTML = '';
 
     const ctx = statsChart.getContext('2d');
     statsChart.chart = new Chart(ctx, {
@@ -450,10 +480,12 @@ function renderChart(chartData) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: true,
             plugins: {
                 legend: {
                     labels: {
-                        color: '#dcddde'
+                        color: '#dcddde',
+                        padding: 15
                     }
                 }
             },
@@ -481,7 +513,7 @@ function renderChart(chartData) {
 }
 
 function renderStatisticsTable(chartData) {
-    let html = '<div style="margin-top: 2rem;"><h3 style="color: #5865f2; margin-bottom: 1rem;">Vote Counts by Date</h3><table style="width: 100%; border-collapse: collapse; color: #dcddde;">';
+    let html = '<div style="margin-top: 2rem;"><h3 style="color: #5865f2; margin-bottom: 1rem;">Vote Counts by Date</h3><div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; color: #dcddde;">';
     
     html += '<tr style="background-color: #2c2f33; border-bottom: 2px solid #202225;">';
     html += '<th style="padding: 0.75rem; text-align: left;">Date</th>';
@@ -499,8 +531,8 @@ function renderStatisticsTable(chartData) {
         html += '</tr>';
     });
 
-    html += '</table></div>';
-    statsContent.innerHTML += html;
+    html += '</table></div></div>';
+    statsContent.innerHTML = html;
 }
 
 // Auto-refresh poll every 30 seconds
