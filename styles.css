@@ -224,7 +224,7 @@ main {
     text-align: left;
 }
 
-.vote-btn:hover {
+.vote-btn:hover:not(.disabled) {
     border-color: var(--primary-color);
     background-color: rgba(88, 101, 242, 0.1);
     transform: translateX(4px);
@@ -248,6 +248,20 @@ main {
 
 .vote-btn.selected .vote-count {
     background-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Disabled vote button - when user has already voted */
+.vote-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+}
+
+.vote-btn.disabled:hover {
+    border-color: var(--border-color);
+    background-color: var(--bg-tertiary);
+    transform: none;
 }
 
 .poll-stats {
