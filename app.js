@@ -51,8 +51,9 @@ const statsChart = document.getElementById('statsChart');
 let referralCode = null;
 let userIP = null;
 let isValidReferral = false;
-let userVotedPolls = {}; // Track which polls user has voted on today
+let userVotedPolls = {}; // Track which polls user has voted on today: { pollId: optionSelected }
 let pollHistory = {}; // Store historical data by date and option
+let pollHistoryLastSync = 0; // Track last sync time
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,6 +64,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeHistoricalData();
         loadPolls();
         setDateInputDefaults();
+        
+        // Sync statistics every 5 seconds
+        setInterval(syncStatistics, 5000);
     }
 });
 
@@ -154,7 +158,7 @@ async function loadUserIP() {
     }
 }
 
-// Load which polls the user has already voted on
+// Load which polls the user has already voted on and which option they chose
 function loadUserVoteStatus() {
     const today = new Date().toISOString().split('T')[0];
     const storedStatus = localStorage.getItem(`votedPolls_${userIP}_${today}`);
@@ -164,7 +168,7 @@ function loadUserVoteStatus() {
     } else {
         userVotedPolls = {};
         POLLS_CONFIG.forEach(poll => {
-            userVotedPolls[poll.id] = false;
+            userVotedPolls[poll.id] = null; // null = not voted, string = option chosen
         });
     }
 }
@@ -173,6 +177,15 @@ function loadUserVoteStatus() {
 function saveUserVoteStatus() {
     const today = new Date().toISOString().split('T')[0];
     localStorage.setItem(`votedPolls_${userIP}_${today}`, JSON.stringify(userVotedPolls));
+}
+
+// Sync statistics from localStorage (all IPs contribute to same statistics)
+function syncStatistics() {
+    const storedData = localStorage.getItem('pollHistory');
+    if (storedData) {
+        pollHistory = JSON.parse(storedData);
+        pollHistoryLastSync = Date.now();
+    }
 }
 
 // Event Listeners
@@ -206,6 +219,7 @@ function switchTab(tabName) {
 
     // Load data for tab
     if (tabName === 'stats') {
+        syncStatistics(); // Force sync before loading stats
         loadStatistics();
     } else if (tabName === 'polls') {
         loadPolls();
@@ -222,6 +236,7 @@ function initializeHistoricalData() {
         POLLS_CONFIG.forEach(poll => {
             pollHistory[poll.id] = {};
         });
+        localStorage.setItem('pollHistory', JSON.stringify(pollHistory));
     } else {
         pollHistory = JSON.parse(storedData);
     }
@@ -265,7 +280,7 @@ function createPollCard(pollConfig) {
     const getPercentage = (count) => (total > 0 ? ((count / total) * 100).toFixed(1) : 0);
 
     // Check if user has voted on this poll
-    const hasVoted = userVotedPolls[pollConfig.id];
+    const hasVoted = userVotedPolls[pollConfig.id] !== null && userVotedPolls[pollConfig.id] !== undefined;
 
     let optionsHTML = '<div class="vote-options">';
     pollConfig.options.forEach(option => {
@@ -292,7 +307,7 @@ function createPollCard(pollConfig) {
     });
     statsHTML += '</div>';
 
-    const voteStatusHTML = hasVoted ? '<div style="margin-top: 1rem; padding: 0.75rem; background-color: #57f287; color: #000; border-radius: 6px; text-align: center; font-weight: 600;">✅ You voted today</div>' : '';
+    const voteStatusHTML = hasVoted ? `<div style="margin-top: 1rem; padding: 0.75rem; background-color: #57f287; color: #000; border-radius: 6px; text-align: center; font-weight: 600;">✅ You voted: ${userVotedPolls[pollConfig.id]}</div>` : '';
 
     card.innerHTML = `
         <div class="card-title">${pollConfig.title}</div>
@@ -322,7 +337,7 @@ function castVote(option, pollId, pollConfig) {
     }
 
     // Check if user has already voted on this poll today
-    if (userVotedPolls[pollId]) {
+    if (userVotedPolls[pollId] !== null && userVotedPolls[pollId] !== undefined) {
         alert('❌ You have already voted on this poll today. Try again tomorrow!');
         return;
     }
@@ -344,18 +359,18 @@ function castVote(option, pollId, pollConfig) {
     // Increment the vote count for this option
     pollHistory[pollId][today][option]++;
 
-    // Save history
+    // Save history to localStorage (synced across all IPs)
     localStorage.setItem('pollHistory', JSON.stringify(pollHistory));
 
-    // Mark that this user has voted on this poll
-    userVotedPolls[pollId] = true;
+    // Mark that this user has voted on this poll with this option
+    userVotedPolls[pollId] = option;
     saveUserVoteStatus();
 
-    // Check if this is the first vote of the day across all polls
-    const hasVotedAnyPoll = Object.values(userVotedPolls).some(voted => voted === true);
-    const justVotedFirstTime = Object.values(userVotedPolls).filter(voted => voted === true).length === 1;
+    // Check if this is the first poll vote of the day
+    const hasVotedAnyPoll = Object.values(userVotedPolls).some(voted => voted !== null && voted !== undefined);
+    const justVotedFirstTime = Object.values(userVotedPolls).filter(voted => voted !== null && voted !== undefined).length === 1;
 
-    // Increment streak on first vote of the day
+    // Increment streak immediately on first vote of the day
     if (justVotedFirstTime && streakSystem) {
         const incremented = streakSystem.incrementStreak();
         if (incremented) {
@@ -364,7 +379,7 @@ function castVote(option, pollId, pollConfig) {
         }
     }
 
-    // Update poll display
+    // Update poll display immediately - only this poll's buttons are disabled now
     loadPolls();
     
     console.log(`✅ Your vote for "${option}" on "${pollConfig.title}" has been recorded!`);
@@ -535,9 +550,10 @@ function renderStatisticsTable(chartData) {
     statsContent.innerHTML = html;
 }
 
-// Auto-refresh poll every 30 seconds
+// Auto-refresh poll every 5 seconds to sync with other users' votes
 setInterval(() => {
     if (document.querySelector('.tab-content.active')?.id === 'pollsTab') {
+        syncStatistics();
         loadPolls();
     }
-}, 30000);
+}, 5000);
