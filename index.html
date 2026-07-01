@@ -12,6 +12,7 @@
         <div class="container">
             <div class="navbar-brand">
                 <h1>Approval Rating Polls</h1>
+                <span class="streak-badge" id="streakBadge">🔥 Streak: 0</span>
             </div>
             <div class="navbar-menu">
                 <a href="#" class="nav-link active" data-tab="polls">Polls</a>
@@ -43,11 +44,14 @@
                 <div class="stats-controls">
                     <select id="pollSelect" class="date-input">
                         <option value="">Select a poll...</option>
+                        <option value="ortho_general_secretary">Ortho as General Secretary</option>
+                        <option value="ortho_semblae">Ortho as Semblae representative</option>
+                        <option value="easternfed_president">Easternfed as Eastern Federation president</option>
                     </select>
                     <input type="date" id="startDate" class="date-input">
                     <span>to</span>
                     <input type="date" id="endDate" class="date-input">
-                    <button id="filterBtn" class="btn btn-primary">View Chart</button>
+                    <button id="filterBtn" class="btn btn-primary">View Statistics</button>
                 </div>
             </div>
 
@@ -56,11 +60,12 @@
                     Select a poll and date range to view historical data
                 </div>
             </div>
+
+            <canvas id="statsChart" style="max-height: 400px; margin-top: 2rem;"></canvas>
         </section>
     </main>
 
-    <canvas id="statsChart" style="display: none;"></canvas>
-
+    <script src="streak.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
