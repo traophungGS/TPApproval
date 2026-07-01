@@ -5,20 +5,54 @@ const DISCORD_SERVER_INVITE = 'https://discord.gg/fnDYaTEzSt';
 // Security token for the voting link (shared secret)
 const VALID_TOKEN = 'trao_phung_voting_2026_secure';
 
+// Poll definitions - 5 options format that reset daily
+const POLLS_CONFIG = [
+    {
+        id: 'ortho_general_secretary',
+        title: 'Ortho as General Secretary',
+        question: 'How do you rate Ortho as General Secretary?',
+        options: ['Excellent', 'Approve', 'Not sure', 'Disapprove', 'Disappointed']
+    },
+    {
+        id: 'ortho_semblae',
+        title: 'Ortho as Semblae representative',
+        question: 'How do you rate Ortho as Semblae representative?',
+        options: ['Excellent', 'Approve', 'Not sure', 'Disapprove', 'Disappointed']
+    },
+    {
+        id: 'easternfed_president',
+        title: 'Easternfed as Eastern Federation president',
+        question: 'How do you rate Easternfed as Eastern Federation president?',
+        options: ['Excellent', 'Approve', 'Not sure', 'Disapprove', 'Disappointed']
+    }
+];
+
+// Emoji mapping for options
+const OPTION_EMOJIS = {
+    'Excellent': '⭐',
+    'Approve': '👍',
+    'Not sure': '😐',
+    'Disapprove': '👎',
+    'Disappointed': '😞'
+};
+
 // DOM Elements
 const navLinks = document.querySelectorAll('.nav-link');
 const tabContents = document.querySelectorAll('.tab-content');
-const pollContent = document.getElementById('pollContent');
+const pollsContainer = document.getElementById('pollsContainer');
 const statsContent = document.getElementById('statsContent');
-const archiveContent = document.getElementById('archiveContent');
 const pollDate = document.getElementById('pollDate');
 const startDate = document.getElementById('startDate');
 const endDate = document.getElementById('endDate');
 const filterBtn = document.getElementById('filterBtn');
+const pollSelect = document.getElementById('pollSelect');
+const statsChart = document.getElementById('statsChart');
 
 let referralCode = null;
 let userIP = null;
 let isValidReferral = false;
+let userVotes = {}; // Track user votes for the day
+let pollHistory = {}; // Store historical data by date
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -26,8 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isValidReferral) {
         loadUserIP();
         setupEventListeners();
-        loadPoll();
+        loadPolls();
         setDateInputDefaults();
+        initializeHistoricalData();
     }
 });
 
@@ -86,7 +121,7 @@ function showAccessDeniedScreen() {
                     </ol>
                 </div>
 
-                <a href="${DISCORD_SERVER_INVITE}" style="background-color: #5865f2; color: white; padding: 1rem 2rem; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 600; font-size: 1rem; transition: background-color 0.3s ease; cursor: pointer;" onmouseover="this.style.backgroundColor='#4752c4'" onmouseout="this.style.backgroundColor='#5865f2'">
+                <a href="${DISCORD_SERVER_INVITE}" style="background-color: #5865f2; color: white; padding: 1rem 2rem; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 600;">
                     Go to Discord Server
                 </a>
 
@@ -147,24 +182,50 @@ function switchTab(tabName) {
     // Load data for tab
     if (tabName === 'stats') {
         loadStatistics();
-    } else if (tabName === 'archive') {
-        loadArchive();
     } else if (tabName === 'polls') {
-        loadPoll();
+        loadPolls();
     }
 }
 
-// Poll Functions
-function loadPoll() {
-    fetch(`${API_URL}/polls/current`)
-        .then(res => res.json())
-        .then(data => {
-            renderPoll(data);
-        })
-        .catch(err => console.error('Error loading poll:', err));
+// Initialize historical data in localStorage
+function initializeHistoricalData() {
+    const today = new Date().toISOString().split('T')[0];
+    const storedData = localStorage.getItem('pollHistory');
+    
+    if (!storedData) {
+        // Initialize with empty data
+        pollHistory = {};
+        POLLS_CONFIG.forEach(poll => {
+            pollHistory[poll.id] = {};
+        });
+    } else {
+        pollHistory = JSON.parse(storedData);
+    }
+
+    // Reset votes for today or initialize
+    const todayData = localStorage.getItem('todayDate');
+    if (todayData !== today) {
+        // New day - reset all daily votes
+        localStorage.setItem('todayDate', today);
+        userVotes = {};
+        POLLS_CONFIG.forEach(poll => {
+            userVotes[poll.id] = {
+                Excellent: 0,
+                Approve: 0,
+                'Not sure': 0,
+                Disapprove: 0,
+                Disappointed: 0
+            };
+        });
+    } else {
+        // Load today's votes from storage
+        const storedVotes = localStorage.getItem('todayVotes');
+        userVotes = storedVotes ? JSON.parse(storedVotes) : {};
+    }
 }
 
-function renderPoll(poll) {
+// Poll Functions - Load all three polls
+function loadPolls() {
     const today = new Date().toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
@@ -173,86 +234,120 @@ function renderPoll(poll) {
     });
     pollDate.textContent = today;
 
-    const approve = poll.votes.approve || 0;
-    const disapprove = poll.votes.disapprove || 0;
-    const neutral = poll.votes.neutral || 0;
-    const total = poll.total || 0;
+    pollsContainer.innerHTML = '';
+
+    POLLS_CONFIG.forEach(pollConfig => {
+        const pollCard = createPollCard(pollConfig);
+        pollsContainer.appendChild(pollCard);
+    });
+}
+
+function createPollCard(pollConfig) {
+    const card = document.createElement('div');
+    card.className = 'poll-card';
+    
+    // Initialize votes if not exists
+    if (!userVotes[pollConfig.id]) {
+        userVotes[pollConfig.id] = {
+            Excellent: 0,
+            Approve: 0,
+            'Not sure': 0,
+            Disapprove: 0,
+            Disappointed: 0
+        };
+    }
+
+    const votes = userVotes[pollConfig.id];
+    const total = Object.values(votes).reduce((a, b) => a + b, 0);
 
     const getPercentage = (count) => (total > 0 ? ((count / total) * 100).toFixed(1) : 0);
 
-    pollContent.innerHTML = `
-        <div class="poll-question">What's your approval rating today?</div>
-        <div class="vote-options">
-            <button class="vote-btn" data-vote="approve">
-                <span>👍 Approve</span>
-                <span class="vote-count">${approve}</span>
+    let optionsHTML = '<div class="vote-options">';
+    pollConfig.options.forEach(option => {
+        const emoji = OPTION_EMOJIS[option] || '•';
+        const count = votes[option] || 0;
+        optionsHTML += `
+            <button class="vote-btn" data-vote="${option}" data-poll="${pollConfig.id}">
+                <span>${emoji} ${option}</span>
+                <span class="vote-count">${count}</span>
             </button>
-            <button class="vote-btn" data-vote="disapprove">
-                <span>👎 Disapprove</span>
-                <span class="vote-count">${disapprove}</span>
-            </button>
-            <button class="vote-btn" data-vote="neutral">
-                <span>😐 Neutral</span>
-                <span class="vote-count">${neutral}</span>
-            </button>
-        </div>
-        <div class="poll-stats">
+        `;
+    });
+    optionsHTML += '</div>';
+
+    let statsHTML = '<div class="poll-stats">';
+    pollConfig.options.forEach(option => {
+        const percentage = getPercentage(votes[option] || 0);
+        statsHTML += `
             <div class="stat-item">
-                <div class="stat-label">Approve</div>
-                <div class="stat-value">${getPercentage(approve)}%</div>
+                <div class="stat-label">${option}</div>
+                <div class="stat-value">${percentage}%</div>
             </div>
-            <div class="stat-item">
-                <div class="stat-label">Disapprove</div>
-                <div class="stat-value">${getPercentage(disapprove)}%</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Neutral</div>
-                <div class="stat-value">${getPercentage(neutral)}%</div>
-            </div>
-        </div>
+        `;
+    });
+    statsHTML += '</div>';
+
+    card.innerHTML = `
+        <div class="card-title">${pollConfig.title}</div>
+        <div class="poll-question">${pollConfig.question}</div>
+        ${optionsHTML}
+        ${statsHTML}
         <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #202225; text-align: center; color: #99aab5; font-size: 0.85rem;">
             Total Votes: ${total}
         </div>
     `;
 
     // Add event listeners to vote buttons
-    document.querySelectorAll('.vote-btn').forEach(btn => {
+    card.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            castVote(btn.dataset.vote, poll.id);
+            castVote(btn.dataset.vote, btn.dataset.poll, pollConfig);
         });
     });
+
+    return card;
 }
 
-function castVote(vote, pollId) {
+function castVote(option, pollId, pollConfig) {
     if (!userIP) {
         alert('Unable to verify your IP address. Please refresh and try again.');
         return;
     }
 
-    fetch(`${API_URL}/polls/vote`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Forwarded-For': userIP,
-        },
-        body: JSON.stringify({ 
-            vote,
-            ipAddress: userIP
-        }),
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                loadPoll();
-                alert('✅ Your vote has been recorded!');
-            } else if (data.error) {
-                alert('❌ Error: ' + data.error);
-            }
-        })
-        .catch(err => {
-            console.error('Error casting vote:', err);
-            alert('Failed to cast vote');
-        });
+    // Check if this is first vote today to increment streak
+    const hasVotedToday = Object.keys(userVotes).some(pid => {
+        return Object.values(userVotes[pid]).reduce((a, b) => a + b, 0) > 0;
+    });
+
+    // Update local vote count
+    userVotes[pollId][option]++;
+    
+    // Save to localStorage
+    localStorage.setItem('todayVotes', JSON.stringify(userVotes));
+
+    // Increment streak on first vote of the day
+    if (!hasVotedToday && streakSystem) {
+        const incremented = streakSystem.incrementStreak();
+        if (incremented) {
+            streakSystem.updateStreakDisplay();
+            console.log('✅ Streak incremented! Current streak:', streakSystem.getStreak());
+        }
+    }
+
+    // Archive today's votes in history
+    const today = new Date().toISOString().split('T')[0];
+    if (!pollHistory[pollId]) {
+        pollHistory[pollId] = {};
+    }
+    if (!pollHistory[pollId][today]) {
+        pollHistory[pollId][today] = {};
+    }
+    pollHistory[pollId][today] = { ...userVotes[pollId] };
+    localStorage.setItem('pollHistory', JSON.stringify(pollHistory));
+
+    // Update poll display
+    loadPolls();
+
+    console.log('✅ Your vote for ' + option + ' has been recorded!');
 }
 
 // Statistics Functions
@@ -265,113 +360,152 @@ function setDateInputDefaults() {
 }
 
 function loadStatistics() {
+    const selectedPoll = pollSelect.value;
     const start = startDate.value;
     const end = endDate.value;
+
+    if (!selectedPoll) {
+        alert('Please select a poll');
+        return;
+    }
 
     if (!start || !end) {
         alert('Please select both start and end dates');
         return;
     }
 
-    fetch(`${API_URL}/stats/range?startDate=${start}&endDate=${end}`)
-        .then(res => res.json())
-        .then(data => {
-            renderStatistics(data);
-        })
-        .catch(err => console.error('Error loading statistics:', err));
-}
-
-function renderStatistics(polls) {
-    if (polls.length === 0) {
-        statsContent.innerHTML = '<div class="no-results">No data available for selected date range</div>';
+    if (new Date(start) > new Date(end)) {
+        alert('Start date must be before end date');
         return;
     }
 
-    statsContent.innerHTML = polls.map(poll => createStatCard(poll)).join('');
+    // Get historical data for the selected poll and date range
+    const pollData = pollHistory[selectedPoll] || {};
+    const chartData = generateChartData(selectedPoll, pollData, start, end);
+    
+    renderChart(chartData);
+    renderStatisticsTable(chartData);
 }
 
-function createStatCard(poll) {
-    const approve = poll.votes.approve || 0;
-    const disapprove = poll.votes.disapprove || 0;
-    const neutral = poll.votes.neutral || 0;
-    const total = poll.total || 0;
+function generateChartData(pollId, pollData, startDateStr, endDateStr) {
+    const options = POLLS_CONFIG.find(p => p.id === pollId)?.options || [];
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+    
+    const dates = [];
+    const datasets = options.map(option => ({
+        label: option,
+        data: [],
+        emoji: OPTION_EMOJIS[option],
+        borderColor: getColorForOption(option),
+        backgroundColor: getColorForOption(option, true),
+        tension: 0.1
+    }));
 
-    const getPercentage = (count) => (total > 0 ? ((count / total) * 100).toFixed(1) : 0);
-    const approvePercent = getPercentage(approve);
-    const disapprovePercent = getPercentage(disapprove);
-    const neutralPercent = getPercentage(neutral);
+    // Generate data for each day in range
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        dates.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
 
-    const date = new Date(poll.date).toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
+        options.forEach((option, idx) => {
+            const dayData = pollData[dateStr] || {};
+            const count = dayData[option] || 0;
+            datasets[idx].data.push(count);
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return { dates, datasets };
+}
+
+function getColorForOption(option, transparent = false) {
+    const colors = {
+        'Excellent': '#57f287',
+        'Approve': '#5865f2',
+        'Not sure': '#faa61a',
+        'Disapprove': '#ed4245',
+        'Disappointed': '#9c27b0'
+    };
+    
+    const color = colors[option] || '#99aab5';
+    return transparent ? color + '33' : color;
+}
+
+function renderChart(chartData) {
+    if (statsChart.chart) {
+        statsChart.chart.destroy();
+    }
+
+    statsChart.style.display = 'block';
+    statsContent.innerHTML = '';
+
+    const ctx = statsChart.getContext('2d');
+    statsChart.chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.dates,
+            datasets: chartData.datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#dcddde'
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#b5bac1'
+                    },
+                    grid: {
+                        color: '#202225'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#b5bac1'
+                    },
+                    grid: {
+                        color: '#202225'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderStatisticsTable(chartData) {
+    let html = '<div style="margin-top: 2rem;"><h3 style="color: #5865f2; margin-bottom: 1rem;">Vote Counts by Date</h3><table style="width: 100%; border-collapse: collapse; color: #dcddde;">';
+    
+    html += '<tr style="background-color: #2c2f33; border-bottom: 2px solid #202225;">';
+    html += '<th style="padding: 0.75rem; text-align: left;">Date</th>';
+    chartData.datasets.forEach(ds => {
+        html += `<th style="padding: 0.75rem; text-align: center;">${ds.emoji} ${ds.label}</th>`;
+    });
+    html += '</tr>';
+
+    chartData.dates.forEach((date, idx) => {
+        html += `<tr style="border-bottom: 1px solid #202225;">`;
+        html += `<td style="padding: 0.75rem;">${date}</td>`;
+        chartData.datasets.forEach(ds => {
+            html += `<td style="padding: 0.75rem; text-align: center; color: ${ds.borderColor}; font-weight: 600;">${ds.data[idx]}</td>`;
+        });
+        html += '</tr>';
     });
 
-    return `
-        <div class="stat-card">
-            <div class="card-date">${date}</div>
-            <div class="card-title">Approval Rating</div>
-            <div class="chart-container">
-                <div class="chart-bar">
-                    <div class="chart-label">Approve</div>
-                    <div class="chart-track">
-                        <div class="chart-fill approve" style="width: ${approvePercent}%">${approvePercent}%</div>
-                    </div>
-                </div>
-                <div class="chart-bar">
-                    <div class="chart-label">Disapprove</div>
-                    <div class="chart-track">
-                        <div class="chart-fill disapprove" style="width: ${disapprovePercent}%">${disapprovePercent}%</div>
-                    </div>
-                </div>
-                <div class="chart-bar">
-                    <div class="chart-label">Neutral</div>
-                    <div class="chart-track">
-                        <div class="chart-fill neutral" style="width: ${neutralPercent}%">${neutralPercent}%</div>
-                    </div>
-                </div>
-            </div>
-            <div class="card-footer">
-                <div class="footer-stat">
-                    <div class="footer-stat-label">Approve</div>
-                    <div class="footer-stat-value">${approve}</div>
-                </div>
-                <div class="footer-stat">
-                    <div class="footer-stat-label">Disapprove</div>
-                    <div class="footer-stat-value">${disapprove}</div>
-                </div>
-                <div class="footer-stat">
-                    <div class="footer-stat-label">Neutral</div>
-                    <div class="footer-stat-value">${neutral}</div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// Archive Functions
-function loadArchive() {
-    fetch(`${API_URL}/stats/archived`)
-        .then(res => res.json())
-        .then(data => {
-            renderArchive(data);
-        })
-        .catch(err => console.error('Error loading archive:', err));
-}
-
-function renderArchive(polls) {
-    if (polls.length === 0) {
-        archiveContent.innerHTML = '<div class="no-results">No archived polls yet</div>';
-        return;
-    }
-
-    archiveContent.innerHTML = polls.map(poll => createStatCard(poll)).join('');
+    html += '</table></div>';
+    statsContent.innerHTML += html;
 }
 
 // Auto-refresh poll every 30 seconds
 setInterval(() => {
     if (document.querySelector('.tab-content.active')?.id === 'pollsTab') {
-        loadPoll();
+        loadPolls();
     }
 }, 30000);
